@@ -3,6 +3,7 @@ package com.aston.userservice.service;
 import com.aston.userservice.dto.UserRequestDto;
 import com.aston.userservice.dto.UserResponseDto;
 import com.aston.userservice.entity.User;
+import com.aston.userservice.kafka.UserEventProducer;
 import com.aston.userservice.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
@@ -14,14 +15,18 @@ import java.util.stream.Collectors;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final UserEventProducer userEventProducer;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, UserEventProducer userEventProducer) {
         this.userRepository = userRepository;
+        this.userEventProducer = userEventProducer;
     }
 
     public UserResponseDto createUser(UserRequestDto dto) {
         User user = new User(dto.getName(), dto.getEmail(), dto.getAge());
-        return toDto(userRepository.save(user));
+        User saved = userRepository.save(user);
+        userEventProducer.sendUserEvent("CREATED", saved.getEmail());
+        return toDto(saved);
     }
 
     public List<UserResponseDto> getAllUsers() {
@@ -45,8 +50,11 @@ public class UserService {
     }
 
     public boolean deleteUser(Long id) {
-        if (userRepository.existsById(id)) {
+        Optional<User> existing = userRepository.findById(id);
+        if (existing.isPresent()) {
+            User user = existing.get();
             userRepository.deleteById(id);
+            userEventProducer.sendUserEvent("DELETED", user.getEmail());
             return true;
         }
         return false;
